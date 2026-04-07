@@ -1,0 +1,20 @@
+[source]
+path = "X:/"
+exclude_patterns = ["~$*", "*.tmp", "$RECYCLE.BIN", ".git", "__pycache__", "Thumbs.db", ".DS_Store"]
+max_file_size_mb = 100
+
+[output]
+kb_root = "./kb"
+
+[convert]
+ocr_enabled = false
+chunk_size_tokens = 0  # 0 = 無効
+
+[llm]
+provider = "anthropic"
+model = "claude-sonnet-4-6"
+max_tokens = 8000
+
+[wiki]
+generate_summaries = true
+generate_concepts = true
