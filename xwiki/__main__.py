@@ -1,69 +1,102 @@
 """xwiki CLI エントリーポイント"""
 
+from __future__ import annotations
+
 import argparse
+import logging
 import sys
+from pathlib import Path
+
+try:
+    from . import __version__
+except ImportError:
+    __version__ = "0.0.0"
+
+from .config import load_config
 
 
 def main() -> None:
+    """CLIエントリーポイント。サブコマンドを解析して対応するモジュールに委譲する。"""
     parser = argparse.ArgumentParser(
         prog="xwiki",
-        description="X Drive → LLM Knowledge Base (Karpathyモデル)",
+        description="LLM Knowledge Base CLI",
     )
-    sub = parser.add_subparsers(dest="command", metavar="COMMAND")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"xwiki {__version__}",
+    )
 
-    # ingest
-    p_ingest = sub.add_parser("ingest", help="ソースファイルを raw/ に変換・取り込む")
-    p_ingest.add_argument("source", nargs="?", help="取り込み元ディレクトリ（config.toml の source_path を上書き）")
-    p_ingest.add_argument("--config", default="config.toml", help="設定ファイルパス")
-    p_ingest.add_argument("--force", action="store_true", help="差分無視で全ファイル再変換")
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # compile
-    p_compile = sub.add_parser("compile", help="raw/ を wiki/ に LLM 増分コンパイル")
-    p_compile.add_argument("--config", default="config.toml", help="設定ファイルパス")
-    p_compile.add_argument("--force", action="store_true", help="差分無視で全ファイル再コンパイル")
-    p_compile.add_argument("--dry-run", action="store_true", help="LLM コール数とコストを見積もる（書き込みなし）")
+    # ingest サブコマンド
+    p_ingest = subparsers.add_parser("ingest", help="ファイルをraw/レイヤーに取り込む")
+    p_ingest.add_argument("source", nargs="?", help="取り込み元ディレクトリ")
+    p_ingest.add_argument("kb", nargs="?", help="KBルートディレクトリ")
+    p_ingest.add_argument("--config", default=None, help="設定ファイルパス（TOML）")
+    p_ingest.add_argument("--force", action="store_true", help="増分判定を無視して全ファイル再処理")
 
-    # search
-    p_search = sub.add_parser("search", help="wiki/ をキーワード検索")
+    # compile サブコマンド
+    p_compile = subparsers.add_parser("compile", help="raw/をLLMでwiki/にコンパイル")
+    p_compile.add_argument("kb", nargs="?", help="KBルートディレクトリ")
+    p_compile.add_argument("--config", default=None, help="設定ファイルパス（TOML）")
+    p_compile.add_argument("--force", action="store_true", help="増分判定を無視して全ファイル再コンパイル")
+    p_compile.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="LLMコール数を事前表示して実行しない",
+    )
+
+    # search サブコマンド
+    p_search = subparsers.add_parser("search", help="wiki/を検索")
     p_search.add_argument("query", help="検索クエリ")
-    p_search.add_argument("--config", default="config.toml", help="設定ファイルパス")
-    p_search.add_argument("--json", action="store_true", dest="json_output", help="JSON 形式で出力（LLM ツール用）")
+    p_search.add_argument("kb", nargs="?", help="KBルートディレクトリ")
+    p_search.add_argument("--config", default=None, help="設定ファイルパス（TOML）")
+    p_search.add_argument("--json", action="store_true", help="JSON形式で出力（LLMツール用）")
 
-    # lint
-    p_lint = sub.add_parser("lint", help="wiki/ の品質ヘルスチェック")
-    p_lint.add_argument("--config", default="config.toml", help="設定ファイルパス")
+    # lint サブコマンド
+    p_lint = subparsers.add_parser("lint", help="wikiのヘルスチェック")
+    p_lint.add_argument("kb", nargs="?", help="KBルートディレクトリ")
+    p_lint.add_argument("--config", default=None, help="設定ファイルパス（TOML）")
 
     args = parser.parse_args()
 
-    if args.command is None:
-        parser.print_help()
-        sys.exit(0)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
 
-    import logging
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    # config 読み込み
+    config_path: Path | None = Path(args.config) if args.config else None
+    config = load_config(config_path)
 
-    from pathlib import Path
-    from .config import load_config
+    # CLI引数でconfig値を上書き
+    if hasattr(args, "source") and args.source:
+        config.source_path = Path(args.source)
+    if hasattr(args, "kb") and args.kb:
+        config.kb_root = Path(args.kb)
 
-    config_path = Path(getattr(args, "config", "config.toml"))
-    config = load_config(config_path if config_path.exists() else None)
-
+    # サブコマンド実行
     if args.command == "ingest":
         from .ingest import ingest
-        source = Path(args.source) if args.source else config.source_path
-        ingest(source.resolve(), config.kb_root.resolve(), config, force=args.force)
+        ingest(config.source_path, config.kb_root, config, force=args.force)
 
     elif args.command == "compile":
-        from .compiler import compile
-        compile(config.kb_root.resolve(), config, force=args.force, dry_run=args.dry_run)
+        from .compiler import compile as compile_kb
+        compile_kb(config.kb_root, config, force=args.force, dry_run=args.dry_run)
 
     elif args.command == "search":
         from .search import search
-        search(config.kb_root.resolve(), args.query, config, json_output=args.json_output)
+        search(config.kb_root, args.query, json_output=args.json)
 
     elif args.command == "lint":
         from .linter import lint
-        lint(config.kb_root.resolve(), config)
+        lint(config.kb_root, client=None)
+
+    else:
+        parser.print_help()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

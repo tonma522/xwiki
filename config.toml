@@ -1,20 +1,57 @@
-[source]
-path = "X:/"
-exclude_patterns = ["~$*", "*.tmp", "$RECYCLE.BIN", ".git", "__pycache__", "Thumbs.db", ".DS_Store"]
+# xwiki 設定ファイル
+# このファイルを編集して python -m xwiki ingest --config config.toml で使用
+
+# ===== ingest 設定 =====
+[ingest]
+# 取り込み元ディレクトリ（Xドライブ等）
+source_path = "X:/"
+
+# KBルートディレクトリ（raw/ wiki/ _meta/ が生成される）
+kb_root = "C:/kb"
+
+# スキップするファイルパターン（glob形式）
+exclude_patterns = ["*.tmp", "~$*", ".DS_Store", "Thumbs.db", "desktop.ini"]
+
+# 取り込み対象の最大ファイルサイズ（MB）
 max_file_size_mb = 100
 
-[output]
-kb_root = "./kb"
-
-[convert]
+# OCR有効化（未実装。将来オプション）
 ocr_enabled = false
-chunk_size_tokens = 0  # 0 = 無効
 
-[llm]
-provider = "anthropic"
-model = "claude-sonnet-4-6"
-max_tokens = 8000
+# ===== converter 設定 =====
+[convert]
+# LibreOfficeの実行ファイルパス（空文字 = PATHから自動検索）
+# Windows例: "C:/Program Files/LibreOffice/program/soffice.exe"
+libreoffice_path = ""
 
-[wiki]
+# フォーマット別コンバータルーティング
+# 利用可能エンジン: "docling" | "markitdown" | "libreoffice->docx->markitdown" 等 | "tika"
+[convert.routes]
+pdf  = "docling"       # Docling: レイアウト・表・OCR対応（推奨）
+docx = "markitdown"    # MarkItDown: Word文書
+pptx = "markitdown"    # MarkItDown: PowerPoint
+xlsx = "markitdown"    # MarkItDown: Excel
+doc  = "libreoffice->docx->markitdown"  # 旧Word: LibreOffice正規化後にMarkItDown
+ppt  = "libreoffice->pptx->markitdown"  # 旧PowerPoint: LibreOffice正規化後にMarkItDown
+xls  = "libreoffice->xlsx->markitdown"  # 旧Excel: LibreOffice正規化後にMarkItDown
+
+# ===== compile 設定 =====
+[compile]
+# 階層要約のチャンクサイズ（トークン数）。0 = 分割なし
+# 大きなファイルで "context length exceeded" が出る場合に設定（例: 4000）
+chunk_size_tokens = 0
+
+# LLMプロバイダー（現在はanthropicのみ）
+llm_provider = "anthropic"
+
+# 使用するClaudeモデル
+llm_model = "claude-sonnet-4-6"
+
+# LLMの最大出力トークン数
+llm_max_tokens = 8000
+
+# サマリー生成を有効にする
 generate_summaries = true
+
+# 概念記事生成を有効にする
 generate_concepts = true
